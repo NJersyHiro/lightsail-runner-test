@@ -1,0 +1,162 @@
+name: Test Systemd Resource Limits
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  resource-test-cpu:
+    runs-on: self-hosted
+    steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Runner: $RUNNER_NAME"
+          echo "📊 System Info:"
+          echo "CPU Count: $(nproc)"
+          echo "Total Memory: $(free -h | grep Mem | awk '{print $2}')"
+      
+      - name: Check systemd cgroup info
+        run: |
+          echo "=== Systemd CGroup Info ==="
+          # 現在のプロセスのcgroup
+          echo "Current cgroup:"
+          cat /proc/self/cgroup || echo "Cannot read cgroup info"
+          
+          # systemdのリソース制限を確認
+          echo ""
+          echo "Systemd resource limits:"
+          systemctl show github-runner@*.service 2>/dev/null | grep -E "(CPU|Memory)" || echo "Service not found"
+      
+      - name: CPU stress test
+        run: |
+          echo "🔥 Starting CPU stress test..."
+          echo "This will use CPU for 30 seconds"
+          
+          # CPU使用率を監視しながらストレステスト
+          (
+            for i in {1..4}; do
+              # 各コアで計算処理
+              (while [ true ]; do echo "scale=5000; 4*a(1)" | bc -l > /dev/null; done) &
+            done
+            
+            # 30秒間実行
+            sleep 30
+            
+            # すべての子プロセスを終了
+            jobs -p | xargs -r kill
+          ) &
+          
+          STRESS_PID=$!
+          
+          # CPU使用率をモニタリング
+          for i in {1..6}; do
+            echo "[$i/6] CPU usage at $(date +%H:%M:%S):"
+            top -bn1 | grep "Cpu(s)" | head -1
+            ps aux | grep -E "(runner|bc)" | grep -v grep | head -5
+            sleep 5
+          done
+          
+          # ストレステストを終了
+          kill $STRESS_PID 2>/dev/null || true
+          wait $STRESS_PID 2>/dev/null || true
+          
+          echo "✅ CPU stress test completed"
+
+  resource-test-memory:
+    runs-on: self-hosted
+    steps:
+      - name: Memory stress test
+        run: |
+          echo "💾 Starting memory stress test..."
+          echo "Current memory usage:"
+          free -h
+          
+          # Pythonで1GBのメモリを確保
+          python3 -c "
+import time
+import psutil
+import os
+
+print('=== Memory Allocation Test ===')
+print(f'PID: {os.getpid()}')
+print(f'Initial memory: {psutil.Process().memory_info().rss / 1024 / 1024:.2f} MB')
+
+# 1GBのメモリを確保
+data = []
+chunk_size = 100 * 1024 * 1024  # 100MB
+chunks = 10  # 合計1GB
+
+for i in range(chunks):
+    data.append(bytearray(chunk_size))
+    current_mem = psutil.Process().memory_info().rss / 1024 / 1024
+    print(f'Allocated {(i+1)*100}MB, Process memory: {current_mem:.2f} MB')
+    time.sleep(2)
+
+print('Holding memory for 10 seconds...')
+time.sleep(10)
+print('Memory test completed')
+          " &
+          
+          MEM_PID=$!
+          
+          # メモリ使用率をモニタリング
+          for i in {1..10}; do
+            echo ""
+            echo "[$i/10] Memory usage at $(date +%H:%M:%S):"
+            free -h
+            echo "Process memory:"
+            ps aux | grep -E "(python3|runner)" | grep -v grep | head -3
+            sleep 3
+          done
+          
+          wait $MEM_PID || true
+          echo "✅ Memory stress test completed"
+
+  resource-test-parallel:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        job_id: [1, 2, 3]
+    steps:
+      - name: Parallel resource test
+        run: |
+          echo "🔄 Parallel job ${{ matrix.job_id }} on $RUNNER_NAME"
+          
+          # 各ジョブが同時にリソースを使用
+          echo "Using CPU and memory for 20 seconds..."
+          
+          # CPUとメモリの両方を使用
+          (
+            # CPU使用
+            echo "scale=5000; 4*a(1)" | bc -l > /dev/null &
+            CPU_PID=$!
+            
+            # メモリ使用（200MB）
+            python3 -c "
+data = bytearray(200 * 1024 * 1024)
+import time
+time.sleep(20)
+            " &
+            MEM_PID=$!
+            
+            # 20秒待機
+            sleep 20
+            
+            # プロセスを終了
+            kill $CPU_PID 2>/dev/null || true
+            kill $MEM_PID 2>/dev/null || true
+          ) &
+          
+          STRESS_PID=$!
+          
+          # リソース使用状況を記録
+          for i in {1..4}; do
+            echo "[$i/4] Job ${{ matrix.job_id }} resource usage:"
+            echo "CPU: $(ps aux | grep -E "bc|python3" | grep -v grep | awk '{sum+=$3} END {print sum "%"}')"
+            echo "Memory: $(ps aux | grep -E "bc|python3" | grep -v grep | awk '{sum+=$4} END {print sum "%"}')"
+            sleep 5
+          done
+          
+          wait $STRESS_PID || true
+          echo "✅ Parallel job ${{ matrix.job_id }} completed"
