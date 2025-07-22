@@ -10,12 +10,17 @@ on:
 jobs:
   test-runner:
     runs-on: self-hosted
+    strategy:
+      matrix:
+        runner: [1, 2, 3]
+      max-parallel: 3
     
     steps:
     - uses: actions/checkout@v4
     
     - name: Runner Information
       run: |
+        echo "Matrix runner: ${{ matrix.runner }}"
         echo "Runner name: ${{ runner.name }}"
         echo "Runner OS: ${{ runner.os }}"
         echo "Runner arch: ${{ runner.arch }}"

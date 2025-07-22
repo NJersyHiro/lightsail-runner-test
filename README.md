@@ -27,6 +27,60 @@ Self-hosted runners give you more control over your CI/CD environment, allowing 
 └── README.md                 # This file
 ```
 
+## Running Multiple Runners for Parallel Execution
+
+To run 3 workflow jobs simultaneously, you need 3 self-hosted runners. Use the provided script to set up multiple runners on a single Lightsail instance:
+
+### Quick Setup for 3 Parallel Runners
+
+1. **SSH into your Lightsail instance**
+2. **Set the runner token**:
+   ```bash
+   export GITHUB_REPOSITORY="your-username/lightsail-runner-test"
+   export RUNNER_TOKEN="your_runner_token_here"
+   ```
+   Get the token from: https://github.com/your-username/lightsail-runner-test/settings/actions/runners/new
+
+3. **Run the multi-runner setup script**:
+   ```bash
+   curl -sSL https://raw.githubusercontent.com/your-username/lightsail-runner-test/main/scripts/setup-multiple-runners.sh | bash
+   ```
+
+This will create 3 runners named:
+- `lightsail-runner-1`
+- `lightsail-runner-2`
+- `lightsail-runner-3`
+
+### How Parallel Execution Works
+
+The workflow has been updated with a matrix strategy that creates 3 jobs. When you trigger the workflow:
+- Each job will be picked up by an available runner
+- With 3 runners, all 3 jobs run simultaneously
+- The matrix strategy ensures proper job distribution
+
+### Managing Multiple Runners
+
+Check runner status:
+```bash
+for i in 1 2 3; do
+    sudo /home/ubuntu/actions-runners/runner-$i/svc.sh status runner-$i
+done
+```
+
+Stop all runners:
+```bash
+for i in 1 2 3; do
+    sudo /home/ubuntu/actions-runners/runner-$i/svc.sh stop runner-$i
+done
+```
+
+Start all runners:
+```bash
+for i in 1 2 3; do
+    sudo /home/ubuntu/actions-runners/runner-$i/svc.sh start runner-$i
+done
+```
+
 ## Quick Start
 
 ### 1. Create AWS Lightsail Instance
