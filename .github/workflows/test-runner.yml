@@ -1,0 +1,51 @@
+name: Test Self-Hosted Runner
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-runner:
+    runs-on: self-hosted
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Runner Information
+      run: |
+        echo "Runner name: ${{ runner.name }}"
+        echo "Runner OS: ${{ runner.os }}"
+        echo "Runner arch: ${{ runner.arch }}"
+        echo "Runner temp directory: ${{ runner.temp }}"
+        
+    - name: System Information
+      run: |
+        echo "=== System Information ==="
+        uname -a
+        echo ""
+        echo "=== CPU Information ==="
+        lscpu | grep -E "Model name|CPU\(s\)|Thread|Core"
+        echo ""
+        echo "=== Memory Information ==="
+        free -h
+        echo ""
+        echo "=== Disk Information ==="
+        df -h
+        
+    - name: Test Basic Commands
+      run: |
+        echo "Testing basic commands..."
+        pwd
+        ls -la
+        echo "Current date: $(date)"
+        
+    - name: Test Environment Variables
+      run: |
+        echo "GitHub Actions environment variables:"
+        echo "GITHUB_WORKFLOW: $GITHUB_WORKFLOW"
+        echo "GITHUB_RUN_ID: $GITHUB_RUN_ID"
+        echo "GITHUB_RUN_NUMBER: $GITHUB_RUN_NUMBER"
+        echo "GITHUB_SHA: $GITHUB_SHA"
