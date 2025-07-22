@@ -1,0 +1,121 @@
+name: Test Systemd Resource Limits Fixed
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  resource-test-cpu:
+    runs-on: self-hosted
+    steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Runner: $RUNNER_NAME"
+          echo "📊 System Info:"
+          echo "CPU Count: $(nproc)"
+          echo "Total Memory: $(free -h | grep Mem | awk '{print $2}')"
+      
+      - name: Check systemd cgroup info
+        run: |
+          echo "=== Systemd CGroup Info ==="
+          # 現在のプロセスのcgroup
+          echo "Current cgroup:"
+          cat /proc/self/cgroup || echo "Cannot read cgroup info"
+          
+          # systemdのリソース制限を確認
+          echo ""
+          echo "Systemd resource limits:"
+          systemctl show github-runner@*.service 2>/dev/null | grep -E "(CPU|Memory)" || echo "Service not found"
+      
+      - name: CPU stress test
+        run: |
+          echo "🔥 Starting CPU stress test..."
+          echo "This will use CPU for 30 seconds"
+          
+          # バックグラウンドでCPU負荷を生成
+          for i in {1..4}; do
+            (while [ true ]; do echo "scale=5000; 4*a(1)" | bc -l > /dev/null 2>&1; done) &
+          done
+          
+          # プロセスIDを保存
+          PIDS=$(jobs -p)
+          
+          # CPU使用率をモニタリング
+          for i in {1..6}; do
+            echo ""
+            echo "[$i/6] CPU usage at $(date +%H:%M:%S):"
+            top -bn1 | head -5
+            sleep 5
+          done
+          
+          # すべてのバックグラウンドジョブを終了
+          for pid in $PIDS; do
+            kill $pid 2>/dev/null || true
+          done
+          
+          echo "✅ CPU stress test completed"
+
+  resource-test-memory:
+    runs-on: self-hosted
+    steps:
+      - name: Memory stress test
+        run: |
+          echo "💾 Starting memory stress test..."
+          echo "Current memory usage:"
+          free -h
+          
+          # メモリ負荷テスト（簡易版）
+          echo "Allocating memory..."
+          
+          # ddコマンドで500MBのファイルを作成
+          dd if=/dev/zero of=/tmp/memtest bs=1M count=500 &
+          DD_PID=$!
+          
+          # メモリ使用率をモニタリング
+          for i in {1..5}; do
+            echo ""
+            echo "[$i/5] Memory usage at $(date +%H:%M:%S):"
+            free -h
+            ps aux | grep -E "(dd|runner)" | grep -v grep | head -3
+            sleep 3
+          done
+          
+          # クリーンアップ
+          wait $DD_PID || true
+          rm -f /tmp/memtest
+          
+          echo "✅ Memory stress test completed"
+
+  resource-test-parallel:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        job_id: [1, 2, 3]
+    steps:
+      - name: Parallel resource test
+        run: |
+          echo "🔄 Parallel job ${{ matrix.job_id }} on $RUNNER_NAME"
+          
+          # CPU負荷
+          (while [ true ]; do echo "scale=1000; 4*a(1)" | bc -l > /dev/null 2>&1; done) &
+          CPU_PID=$!
+          
+          # メモリ負荷
+          dd if=/dev/zero of=/tmp/parallel-test-${{ matrix.job_id }} bs=1M count=200 &
+          MEM_PID=$!
+          
+          # リソース使用状況を記録
+          for i in {1..4}; do
+            echo ""
+            echo "[$i/4] Job ${{ matrix.job_id }} resource usage:"
+            ps aux | grep -E "PID|$CPU_PID|$MEM_PID" | grep -v grep || true
+            sleep 5
+          done
+          
+          # プロセスを終了
+          kill $CPU_PID 2>/dev/null || true
+          kill $MEM_PID 2>/dev/null || true
+          rm -f /tmp/parallel-test-${{ matrix.job_id }}
+          
+          echo "✅ Parallel job ${{ matrix.job_id }} completed"
