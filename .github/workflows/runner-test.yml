@@ -1,0 +1,133 @@
+name: Test 4 Jobs Per Runner
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  # 4 jobs for ip-172-26-14-211
+  ip-job-1:
+    runs-on: [self-hosted, lightsail, ip-172-26-14-211]
+    steps:
+      - name: Run task 1
+        run:  < /dev/null | 
+          echo "🏃 Job 1 executing on $RUNNER_NAME"
+          echo "📍 Hostname: $HOSTNAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 1 complete!"
+
+  ip-job-2:
+    runs-on: [self-hosted, lightsail, ip-172-26-14-211]
+    steps:
+      - name: Run task 2
+        run: |
+          echo "🏃 Job 2 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 2 complete!"
+
+  ip-job-3:
+    runs-on: [self-hosted, lightsail, ip-172-26-14-211]
+    steps:
+      - name: Run task 3
+        run: |
+          echo "🏃 Job 3 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 3 complete!"
+
+  ip-job-4:
+    runs-on: [self-hosted, lightsail, ip-172-26-14-211]
+    steps:
+      - name: Run task 4
+        run: |
+          echo "🏃 Job 4 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 4 complete!"
+
+  # 4 jobs for runner2
+  runner2-job-1:
+    runs-on: [self-hosted, lightsail, runner2]
+    steps:
+      - name: Run task 1
+        run: |
+          echo "🏃 Job 1 executing on $RUNNER_NAME"
+          echo "📍 Hostname: $HOSTNAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 1 complete!"
+
+  runner2-job-2:
+    runs-on: [self-hosted, lightsail, runner2]
+    steps:
+      - name: Run task 2
+        run: |
+          echo "🏃 Job 2 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 2 complete!"
+
+  runner2-job-3:
+    runs-on: [self-hosted, lightsail, runner2]
+    steps:
+      - name: Run task 3
+        run: |
+          echo "🏃 Job 3 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 3 complete!"
+
+  runner2-job-4:
+    runs-on: [self-hosted, lightsail, runner2]
+    steps:
+      - name: Run task 4
+        run: |
+          echo "🏃 Job 4 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 4 complete!"
+
+  # 4 jobs for runner3
+  runner3-job-1:
+    runs-on: [self-hosted, lightsail, runner3]
+    steps:
+      - name: Run task 1
+        run: |
+          echo "🏃 Job 1 executing on $RUNNER_NAME"
+          echo "📍 Hostname: $HOSTNAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 1 complete!"
+
+  runner3-job-2:
+    runs-on: [self-hosted, lightsail, runner3]
+    steps:
+      - name: Run task 2
+        run: |
+          echo "🏃 Job 2 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 2 complete!"
+
+  runner3-job-3:
+    runs-on: [self-hosted, lightsail, runner3]
+    steps:
+      - name: Run task 3
+        run: |
+          echo "🏃 Job 3 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 3 complete!"
+
+  runner3-job-4:
+    runs-on: [self-hosted, lightsail, runner3]
+    steps:
+      - name: Run task 4
+        run: |
+          echo "🏃 Job 4 executing on $RUNNER_NAME"
+          echo "⏱️  Processing for 20 seconds..."
+          sleep 20
+          echo "✅ Job 4 complete!"
