@@ -1,0 +1,175 @@
+name: Test 4 - Workflow Compatible
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  setup-workflow-env:
+    runs-on: self-hosted
+    outputs:
+      workflow-dir: ${{ steps.setup.outputs.workflow-dir }}
+    steps:
+      - name: Setup workflow-specific directory
+        id: setup
+        run: |
+          # _work内にワークフロー専用ディレクトリを作成
+          WORKFLOW_DIR="workflow-${{ github.run_id }}"
+          echo "workflow-dir=$WORKFLOW_DIR" >> $GITHUB_OUTPUT
+          echo "✅ Workflow directory name: $WORKFLOW_DIR"
+
+  isolated-job-1:
+    runs-on: self-hosted
+    needs: setup-workflow-env
+    steps:
+      - name: Show workflow info
+        run: |
+          echo "🏃 Runner: $RUNNER_NAME"
+          echo "🆔 Workflow ID: ${{ github.run_id }}"
+          echo "📁 Workflow Dir: ${{ needs.setup-workflow-env.outputs.workflow-dir }}"
+      
+      - name: Setup job isolation
+        run: |
+          # ワークフロー内でジョブごとの分離
+          WORKFLOW_DIR="${{ needs.setup-workflow-env.outputs.workflow-dir }}"
+          JOB_DIR="$WORKFLOW_DIR/job1"
+          mkdir -p $JOB_DIR/{bin,lib,data}
+          
+          echo "JOB_DIR=$JOB_DIR" >> $GITHUB_ENV
+          echo "✅ Created job directory: $(pwd)/$JOB_DIR"
+          
+          # ジョブ専用の環境変数を設定
+          echo "JOB1_HOME=$(pwd)/$JOB_DIR" >> $GITHUB_ENV
+          echo "JOB1_DATA=$(pwd)/$JOB_DIR/data" >> $GITHUB_ENV
+      
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ env.JOB_DIR }}/code
+      
+      - name: Create isolated binaries and environment
+        run: |
+          cd ${{ env.JOB1_HOME }}
+          
+          # 独自のツールを作成
+          cat > bin/job1-tool << 'EOF'
+          #!/bin/bash
+          echo "=== Job 1 Custom Tool ==="
+          echo "Running in: $JOB1_HOME"
+          echo "Data directory: $JOB1_DATA"
+          echo "Executed by: $RUNNER_NAME"
+          echo "Time: $(date)"
+          EOF
+          chmod +x bin/job1-tool
+          
+          # PATH に追加
+          echo "PATH=${{ env.JOB1_HOME }}/bin:$PATH" >> $GITHUB_ENV
+          
+          echo "🔧 Testing custom tool:"
+          ./bin/job1-tool
+      
+      - name: Process data in isolation
+        run: |
+          cd ${{ env.JOB1_DATA }}
+          
+          # データ処理
+          echo "=== Job 1 Processing ===" > process.log
+          echo "Runner: $RUNNER_NAME" >> process.log
+          echo "Working directory: $(pwd)" >> process.log
+          
+          # 並列処理のシミュレーション
+          for i in {1..10}; do
+            echo "[Job1] Step $i at $(date +%s.%N)" >> process.log
+            sleep 1
+          done
+          
+          echo "✅ Job 1 processing completed"
+          tail -5 process.log
+      
+      - name: Verify job isolation
+        run: |
+          echo "🔍 Verifying Job 1 isolation..."
+          echo "Job 1 files:"
+          find ${{ env.JOB1_HOME }} -type f | sort
+
+  isolated-job-2:
+    runs-on: self-hosted
+    needs: setup-workflow-env
+    steps:
+      - name: Setup different job isolation
+        run: |
+          # Job 2用の独立環境
+          WORKFLOW_DIR="${{ needs.setup-workflow-env.outputs.workflow-dir }}"
+          JOB_DIR="$WORKFLOW_DIR/job2"
+          mkdir -p $JOB_DIR/{bin,config,output}
+          
+          echo "JOB_DIR=$JOB_DIR" >> $GITHUB_ENV
+          echo "JOB2_HOME=$(pwd)/$JOB_DIR" >> $GITHUB_ENV
+          echo "JOB2_CONFIG=$(pwd)/$JOB_DIR/config" >> $GITHUB_ENV
+          echo "✅ Created Job 2 directory"
+      
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ env.JOB_DIR }}/code
+      
+      - name: Create job2 specific environment
+        run: |
+          cd ${{ env.JOB2_HOME }}
+          
+          # Job2専用の設定
+          cat > config/settings.json << EOF
+          {
+            "job": "job2",
+            "runner": "$RUNNER_NAME",
+            "timestamp": "$(date -Iseconds)",
+            "workflow_id": "${{ github.run_id }}"
+          }
+          EOF
+          
+          # Job2専用ツール
+          cat > bin/job2-tool << 'EOF'
+          #!/bin/bash
+          echo "=== Job 2 Custom Tool ==="
+          echo "Different from Job 1 tool"
+          echo "Config location: $JOB2_CONFIG"
+          EOF
+          chmod +x bin/job2-tool
+          
+          echo "📋 Job 2 Configuration:"
+          cat config/settings.json
+      
+      - name: Parallel processing test
+        run: |
+          cd ${{ env.JOB2_HOME }}/output
+          
+          # Job1と並列で実行
+          echo "=== Job 2 Processing ===" > job2.log
+          
+          for i in {1..10}; do
+            echo "[Job2-$RUNNER_NAME] Step $i at $(date +%s.%N)" >> job2.log
+            sleep 1
+          done
+          
+          echo "✅ Job 2 completed independently"
+          tail -5 job2.log
+  
+  cleanup-workflow:
+    runs-on: self-hosted
+    needs: [setup-workflow-env, isolated-job-1, isolated-job-2]
+    if: always()
+    steps:
+      - name: Cleanup entire workflow directory
+        run: |
+          WORKFLOW_DIR="${{ needs.setup-workflow-env.outputs.workflow-dir }}"
+          echo "🧹 Cleaning up workflow directory..."
+          
+          if [ -d "$WORKFLOW_DIR" ]; then
+            echo "Directory structure before cleanup:"
+            find $WORKFLOW_DIR -type f | wc -l
+            echo "files found"
+            
+            rm -rf "$WORKFLOW_DIR"
+            echo "✅ Removed workflow directory: $WORKFLOW_DIR"
+          else
+            echo "ℹ️ Workflow directory not found or already cleaned"
+          fi

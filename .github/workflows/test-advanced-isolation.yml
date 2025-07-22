@@ -1,0 +1,150 @@
+name: Test Advanced Isolation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  parallel-isolation-test:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        job_id: [alpha, beta, gamma]
+    steps:
+      - name: Initialize isolated environment
+        run: |
+          echo "🏃 Runner: $RUNNER_NAME"
+          echo "🔤 Job ID: ${{ matrix.job_id }}"
+          
+          # マトリックスジョブごとの完全分離
+          ISOLATED_ROOT="isolation-${{ github.run_id }}-${{ matrix.job_id }}"
+          mkdir -p $ISOLATED_ROOT/{workspace,temp,cache,logs}
+          
+          echo "ISOLATED_ROOT=$ISOLATED_ROOT" >> $GITHUB_ENV
+          echo "✅ Created isolated root: $(pwd)/$ISOLATED_ROOT"
+      
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ env.ISOLATED_ROOT }}/workspace
+      
+      - name: Setup job-specific environment
+        run: |
+          cd ${{ env.ISOLATED_ROOT }}
+          
+          # ジョブ専用の環境設定
+          cat > env-setup.sh << EOF
+          export JOB_ID="${{ matrix.job_id }}"
+          export JOB_WORKSPACE="$(pwd)/workspace"
+          export JOB_TEMP="$(pwd)/temp"
+          export JOB_CACHE="$(pwd)/cache"
+          export JOB_LOGS="$(pwd)/logs"
+          export JOB_RUNNER="$RUNNER_NAME"
+          EOF
+          
+          source env-setup.sh
+          
+          # 環境情報をログに記録
+          cat > logs/environment.log << EOF
+          Job Environment for ${{ matrix.job_id }}
+          =====================================
+          Runner: $JOB_RUNNER
+          Workspace: $JOB_WORKSPACE
+          Temp: $JOB_TEMP
+          Cache: $JOB_CACHE
+          Logs: $JOB_LOGS
+          Time: $(date)
+          =====================================
+          EOF
+          
+          cat logs/environment.log
+      
+      - name: Simulate parallel workload
+        run: |
+          cd ${{ env.ISOLATED_ROOT }}
+          source env-setup.sh
+          
+          # 各ジョブが異なる処理を実行
+          case "${{ matrix.job_id }}" in
+            alpha)
+              echo "🅰️ Alpha job: Data processing"
+              for i in {1..15}; do
+                echo "[Alpha-$RUNNER_NAME] Processing batch $i" >> logs/alpha.log
+                # CPUを少し使う処理
+                echo "scale=10; 4*a(1)" | bc -l > /dev/null 2>&1 || true
+                sleep 0.5
+              done
+              ;;
+            beta)
+              echo "🅱️ Beta job: File operations"
+              for i in {1..10}; do
+                echo "[Beta-$RUNNER_NAME] Creating file $i" >> logs/beta.log
+                dd if=/dev/zero of=temp/file-$i.dat bs=1M count=1 2>/dev/null
+                sleep 1
+              done
+              ;;
+            gamma)
+              echo "🌀 Gamma job: Network simulation"
+              for i in {1..12}; do
+                echo "[Gamma-$RUNNER_NAME] Network test $i" >> logs/gamma.log
+                # ネットワーク遅延のシミュレーション
+                sleep 0.8
+              done
+              ;;
+          esac
+          
+          echo "✅ ${{ matrix.job_id }} job completed"
+      
+      - name: Generate job report
+        run: |
+          cd ${{ env.ISOLATED_ROOT }}
+          
+          # ジョブレポートの生成
+          cat > logs/report.txt << EOF
+          === Job Report: ${{ matrix.job_id }} ===
+          Runner: $RUNNER_NAME
+          Start: ${{ job.started_at }}
+          
+          Directory Usage:
+          $(du -sh * 2>/dev/null || echo "No data")
+          
+          Log Files:
+          $(ls -la logs/ 2>/dev/null || echo "No logs")
+          
+          Temp Files:
+          $(ls -la temp/ 2>/dev/null | wc -l) files created
+          ===================================
+          EOF
+          
+          cat logs/report.txt
+      
+      - name: Verify isolation
+        run: |
+          echo "🔍 Verifying isolation for ${{ matrix.job_id }}..."
+          
+          # 他のジョブのディレクトリにアクセスできないことを確認
+          for other in alpha beta gamma; do
+            if [ "$other" != "${{ matrix.job_id }}" ]; then
+              OTHER_DIR="isolation-${{ github.run_id }}-$other"
+              if [ -d "$OTHER_DIR" ]; then
+                echo "⚠️ Found other job directory: $OTHER_DIR (expected in parallel execution)"
+              else
+                echo "✅ Other job directory not accessible: $OTHER_DIR"
+              fi
+            fi
+          done
+          
+          # 自分のディレクトリの内容を確認
+          echo ""
+          echo "📁 My isolated directory (${{ matrix.job_id }}):"
+          find ${{ env.ISOLATED_ROOT }} -type f | wc -l
+          echo "files created"
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -d "${{ env.ISOLATED_ROOT }}" ]; then
+            echo "🧹 Cleaning up ${{ matrix.job_id }} workspace..."
+            rm -rf "${{ env.ISOLATED_ROOT }}"
+            echo "✅ Cleanup completed for ${{ matrix.job_id }}"
+          fi

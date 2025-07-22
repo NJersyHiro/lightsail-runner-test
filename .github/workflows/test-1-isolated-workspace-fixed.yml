@@ -1,0 +1,86 @@
+name: Test 1 - Isolated Workspace (Fixed)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  isolated-build-method1:
+    runs-on: self-hosted
+    steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Running on: $RUNNER_NAME"
+          echo "📂 Runner temp: ${{ runner.temp }}"
+      
+      - name: Setup isolated workspace
+        run: |
+          # ユニークなワークスペースを作成
+          export WORKSPACE="${{ runner.temp }}/workspace-${{ github.run_id }}-${{ github.run_attempt }}"
+          mkdir -p $WORKSPACE
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          echo "✅ Created workspace: $WORKSPACE"
+      
+      # 方法1: デフォルトの場所にチェックアウトしてから移動
+      - uses: actions/checkout@v4
+      
+      - name: Move to isolated workspace
+        run: |
+          echo "📦 Moving code to isolated workspace..."
+          cp -r * ${{ env.WORKSPACE }}/ 2>/dev/null || true
+          cp -r .* ${{ env.WORKSPACE }}/ 2>/dev/null || true
+          cd ${{ env.WORKSPACE }}
+          echo "✅ Code moved to: $(pwd)"
+          ls -la
+      
+      - name: Work in isolated space
+        working-directory: ${{ env.WORKSPACE }}
+        run: |
+          echo "📝 Working in isolated workspace..."
+          echo "Runner: $RUNNER_NAME" > runner-info.txt
+          echo "Workspace: ${{ env.WORKSPACE }}" >> runner-info.txt
+          echo "Time: $(date)" >> runner-info.txt
+          cat runner-info.txt
+      
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          if [ -d "${{ env.WORKSPACE }}" ]; then
+            rm -rf "${{ env.WORKSPACE }}"
+            echo "✅ Cleanup completed"
+          fi
+
+  isolated-build-method2:
+    runs-on: self-hosted
+    steps:
+      - name: Setup with manual git clone
+        run: |
+          # 完全に独立したワークスペースでgit cloneを使用
+          WORKSPACE="${{ runner.temp }}/manual-workspace-${{ github.run_id }}"
+          mkdir -p $WORKSPACE
+          cd $WORKSPACE
+          
+          echo "📥 Cloning repository manually..."
+          git clone https://github.com/${{ github.repository }} .
+          git checkout ${{ github.sha }}
+          
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          echo "✅ Manual checkout completed in: $WORKSPACE"
+      
+      - name: Work in truly isolated space
+        run: |
+          cd ${{ env.WORKSPACE }}
+          echo "📍 Current directory: $(pwd)"
+          echo "📁 Files:"
+          ls -la
+          
+          # 作業を実行
+          echo "Test data from $RUNNER_NAME" > isolated-test.txt
+          mkdir -p results
+          echo "Results generated at $(date)" > results/output.txt
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          [ -d "${{ env.WORKSPACE }}" ] && rm -rf "${{ env.WORKSPACE }}"

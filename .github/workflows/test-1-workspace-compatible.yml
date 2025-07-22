@@ -1,0 +1,117 @@
+name: Test 1 - Workspace Compatible
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  isolated-build-1:
+    runs-on: self-hosted
+    steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Running on: $RUNNER_NAME"
+          echo "📂 Default workspace: ${{ github.workspace }}"
+          echo "📂 Working directory: $(pwd)"
+      
+      - name: Create isolated subdirectory
+        run: |
+          # _work/repo/repo/ 内にユニークなサブディレクトリを作成
+          ISOLATED_DIR="isolated-${{ github.run_id }}-${{ github.run_attempt }}-job1"
+          mkdir -p $ISOLATED_DIR
+          echo "ISOLATED_DIR=$ISOLATED_DIR" >> $GITHUB_ENV
+          echo "✅ Created isolated directory: $(pwd)/$ISOLATED_DIR"
+      
+      - uses: actions/checkout@v4
+        with:
+          # 相対パスでチェックアウト（_work/repo/repo/isolated-xxx/ に配置）
+          path: ${{ env.ISOLATED_DIR }}
+      
+      - name: Work in isolated space
+        working-directory: ${{ env.ISOLATED_DIR }}
+        run: |
+          echo "📝 Working in isolated workspace..."
+          echo "Current directory: $(pwd)"
+          echo "Runner: $RUNNER_NAME" > runner-info.txt
+          echo "Isolated path: $(pwd)" >> runner-info.txt
+          echo "Time: $(date)" >> runner-info.txt
+          
+          # ビルド成果物のシミュレーション
+          mkdir -p build
+          echo "Build output from $RUNNER_NAME at $(date)" > build/output.txt
+          
+          echo "📁 Files created:"
+          ls -la
+          cat runner-info.txt
+      
+      - name: Simulate concurrent file operations
+        working-directory: ${{ env.ISOLATED_DIR }}
+        run: |
+          # 10秒間、1秒ごとにファイルに書き込み
+          for i in {1..10}; do
+            echo "[$RUNNER_NAME] Write $i at $(date +%s.%N)" >> concurrent-test.log
+            sleep 1
+          done
+          
+          echo "📊 Concurrent writes completed. Log content:"
+          tail -5 concurrent-test.log
+      
+      - name: Cleanup isolated directory
+        if: always()
+        run: |
+          echo "🧹 Cleaning up isolated directory..."
+          if [ -d "${{ env.ISOLATED_DIR }}" ]; then
+            echo "Removing: $(pwd)/${{ env.ISOLATED_DIR }}"
+            rm -rf "${{ env.ISOLATED_DIR }}"
+            echo "✅ Cleanup completed"
+          fi
+
+  isolated-build-2:
+    runs-on: self-hosted
+    steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Running on: $RUNNER_NAME"
+          echo "📂 Working in: $(pwd)"
+      
+      - name: Create different isolated directory
+        run: |
+          # 異なるジョブ用の分離ディレクトリ
+          ISOLATED_DIR="isolated-${{ github.run_id }}-${{ github.run_attempt }}-job2"
+          mkdir -p $ISOLATED_DIR
+          echo "ISOLATED_DIR=$ISOLATED_DIR" >> $GITHUB_ENV
+          echo "✅ Created isolated directory: $(pwd)/$ISOLATED_DIR"
+      
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ env.ISOLATED_DIR }}
+      
+      - name: Create different test files
+        working-directory: ${{ env.ISOLATED_DIR }}
+        run: |
+          echo "📝 Creating different test files..."
+          mkdir -p build
+          echo "Different output from $RUNNER_NAME" > build/output.txt
+          
+          # 異なるファイルを作成して競合がないことを確認
+          echo "Job 2 data from $RUNNER_NAME at $(date)" > job2-specific.txt
+          
+          echo "📁 Job 2 files:"
+          ls -la
+          
+          # 並列実行の確認
+          for i in {1..5}; do
+            echo "[Job2-$RUNNER_NAME] Entry $i at $(date +%s.%N)" >> job2-concurrent.log
+            sleep 2
+          done
+          
+          echo "✅ Job 2 completed"
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -d "${{ env.ISOLATED_DIR }}" ]; then
+            rm -rf "${{ env.ISOLATED_DIR }}"
+            echo "✅ Job 2 cleanup completed"
+          fi
