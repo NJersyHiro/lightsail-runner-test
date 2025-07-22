@@ -1,0 +1,90 @@
+name: Test 2 - Dynamic Directories
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  dynamic-dir-test:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        test_id: [1, 2, 3]
+    steps:
+      - name: Show runner and job info
+        run: |
+          echo "🏃 Runner: $RUNNER_NAME"
+          echo "🔢 Test ID: ${{ matrix.test_id }}"
+          echo "🆔 Run ID: ${{ github.run_id }}"
+      
+      - name: Create unique directories
+        run: |
+          # ランナー名とタイムスタンプでユニーク化
+          BUILD_DIR="/tmp/build-${RUNNER_NAME}-$(date +%s%N)"
+          mkdir -p $BUILD_DIR
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+          echo "✅ Created build directory: $BUILD_DIR"
+          
+          # データディレクトリも作成
+          DATA_DIR="/tmp/data-${RUNNER_NAME}-${{ matrix.test_id }}-$(date +%s)"
+          mkdir -p $DATA_DIR
+          echo "DATA_DIR=$DATA_DIR" >> $GITHUB_ENV
+          echo "✅ Created data directory: $DATA_DIR"
+      
+      - uses: actions/checkout@v4
+      
+      - name: Build simulation
+        run: |
+          cd $BUILD_DIR
+          echo "🔨 Building in: $BUILD_DIR"
+          
+          # ビルドプロセスのシミュレーション
+          echo "Building project..." > build.log
+          echo "Runner: $RUNNER_NAME" >> build.log
+          echo "Matrix ID: ${{ matrix.test_id }}" >> build.log
+          echo "Timestamp: $(date)" >> build.log
+          
+          # ビルド成果物の作成
+          mkdir -p output
+          echo "Build artifact from $RUNNER_NAME - Test ${{ matrix.test_id }}" > output/artifact.txt
+          
+          # 5秒間のビルドシミュレーション
+          for i in {1..5}; do
+            echo "Build step $i/5..." >> build.log
+            sleep 1
+          done
+          
+          echo "✅ Build completed"
+          cat build.log
+      
+      - name: Data processing
+        run: |
+          cd $DATA_DIR
+          echo "📊 Processing data in: $DATA_DIR"
+          
+          # データ処理のシミュレーション
+          for i in {1..3}; do
+            echo "Data point $i from $RUNNER_NAME" > "data-$i.txt"
+          done
+          
+          ls -la
+      
+      - name: Verify isolation
+        run: |
+          echo "🔍 Verifying directory isolation..."
+          echo "Build directory contents:"
+          ls -la $BUILD_DIR || echo "Build directory not accessible"
+          echo ""
+          echo "Data directory contents:"
+          ls -la $DATA_DIR || echo "Data directory not accessible"
+          echo ""
+          echo "Checking /tmp for all build directories:"
+          ls -la /tmp | grep "build-" | head -10 || echo "No build directories found"
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "🧹 Cleaning up directories..."
+          [ -d "$BUILD_DIR" ] && rm -rf "$BUILD_DIR" && echo "Removed: $BUILD_DIR"
+          [ -d "$DATA_DIR" ] && rm -rf "$DATA_DIR" && echo "Removed: $DATA_DIR"

@@ -1,0 +1,149 @@
+name: Test 4 - Workflow Isolation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  # ワークフローレベルでの分離
+  WORK_ROOT: /tmp/runners/${{ github.run_id }}
+
+jobs:
+  isolated-job-1:
+    runs-on: self-hosted
+    steps:
+      - name: Show workflow info
+        run: |
+          echo "🏃 Runner: $RUNNER_NAME"
+          echo "🆔 Workflow ID: ${{ github.run_id }}"
+          echo "📁 Work Root: ${{ env.WORK_ROOT }}"
+      
+      - name: Setup isolation
+        run: |
+          # 完全に独立した環境を作成
+          mkdir -p ${{ env.WORK_ROOT }}/job1/{bin,lib,data}
+          cd ${{ env.WORK_ROOT }}/job1
+          
+          echo "✅ Created isolated environment at: $(pwd)"
+          
+          # 独自のPATHを設定
+          echo "PATH=${{ env.WORK_ROOT }}/job1/bin:$PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=${{ env.WORK_ROOT }}/job1/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          
+          # カスタム環境変数
+          echo "JOB1_HOME=${{ env.WORK_ROOT }}/job1" >> $GITHUB_ENV
+          echo "JOB1_DATA=${{ env.WORK_ROOT }}/job1/data" >> $GITHUB_ENV
+      
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ env.WORK_ROOT }}/job1/code
+      
+      - name: Create isolated binaries
+        run: |
+          cd ${{ env.JOB1_HOME }}
+          
+          # 独自のスクリプトを作成
+          cat > bin/custom-tool << 'EOF'
+          #!/bin/bash
+          echo "Custom tool from Job 1"
+          echo "Running in: $JOB1_HOME"
+          echo "Data directory: $JOB1_DATA"
+          EOF
+          chmod +x bin/custom-tool
+          
+          # 実行確認
+          echo "🔧 Testing custom tool:"
+          custom-tool
+      
+      - name: Process data in isolation
+        run: |
+          cd ${{ env.JOB1_DATA }}
+          
+          # データ処理
+          echo "Processing in isolated environment..." > process.log
+          echo "Runner: $RUNNER_NAME" >> process.log
+          echo "Job: 1" >> process.log
+          echo "Time: $(date)" >> process.log
+          
+          # 10秒間の処理シミュレーション
+          for i in {1..10}; do
+            echo "Processing step $i/10..." >> process.log
+            sleep 1
+          done
+          
+          echo "✅ Processing completed"
+          tail -5 process.log
+      
+      - name: Verify isolation
+        run: |
+          echo "🔍 Verifying environment isolation..."
+          echo "Current PATH: $PATH"
+          echo "Current working directory: $(pwd)"
+          echo "Environment files:"
+          find ${{ env.WORK_ROOT }} -type f | head -20
+
+  isolated-job-2:
+    runs-on: self-hosted
+    steps:
+      - name: Setup different isolation
+        run: |
+          # Job 2用の独立環境
+          mkdir -p ${{ env.WORK_ROOT }}/job2/{bin,lib,data}
+          cd ${{ env.WORK_ROOT }}/job2
+          
+          echo "✅ Created isolated environment for Job 2"
+          
+          # 異なる環境変数
+          echo "JOB2_HOME=${{ env.WORK_ROOT }}/job2" >> $GITHUB_ENV
+          echo "JOB2_CONFIG=${{ env.WORK_ROOT }}/job2/config" >> $GITHUB_ENV
+      
+      - name: Create different tools
+        run: |
+          cd ${{ env.JOB2_HOME }}
+          mkdir -p config
+          
+          # 異なる設定ファイル
+          cat > config/settings.json << EOF
+          {
+            "job": "job2",
+            "runner": "$RUNNER_NAME",
+            "timestamp": "$(date -Iseconds)"
+          }
+          EOF
+          
+          echo "📋 Configuration:"
+          cat config/settings.json
+      
+      - name: Parallel processing test
+        run: |
+          cd ${{ env.JOB2_HOME }}
+          
+          # Job1と同時に実行されても競合しないことを確認
+          echo "Job 2 processing independently..." > job2.log
+          
+          for i in {1..5}; do
+            echo "Job 2 - Step $i at $(date +%s.%N)" >> job2.log
+            sleep 2
+          done
+          
+          echo "✅ Job 2 completed"
+          cat job2.log
+  
+  cleanup-job:
+    runs-on: self-hosted
+    needs: [isolated-job-1, isolated-job-2]
+    if: always()
+    steps:
+      - name: Cleanup workflow directory
+        run: |
+          echo "🧹 Cleaning up workflow directory..."
+          if [ -d "${{ env.WORK_ROOT }}" ]; then
+            echo "Directory structure before cleanup:"
+            du -sh ${{ env.WORK_ROOT }}/* 2>/dev/null || echo "Empty"
+            
+            rm -rf "${{ env.WORK_ROOT }}"
+            echo "✅ Removed: ${{ env.WORK_ROOT }}"
+          else
+            echo "ℹ️ Directory already cleaned"
+          fi

@@ -1,0 +1,103 @@
+name: Test 1 - Isolated Workspace
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  isolated-build-1:
+    runs-on: self-hosted
+    steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Running on: $RUNNER_NAME"
+          echo "📂 Runner temp: ${{ runner.temp }}"
+      
+      - name: Setup isolated workspace
+        run: |
+          # ユニークなワークスペースを作成
+          export WORKSPACE="${{ runner.temp }}/workspace-${{ github.run_id }}-${{ github.run_attempt }}"
+          mkdir -p $WORKSPACE
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          echo "✅ Created workspace: $WORKSPACE"
+      
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ env.WORKSPACE }}/code
+      
+      - name: Create test files in isolated space
+        working-directory: ${{ env.WORKSPACE }}/code
+        run: |
+          echo "📝 Creating test files in isolated workspace..."
+          echo "Runner: $RUNNER_NAME" > runner-info.txt
+          echo "Workspace: ${{ env.WORKSPACE }}" >> runner-info.txt
+          echo "Time: $(date)" >> runner-info.txt
+          
+          # ビルド成果物のシミュレーション
+          mkdir -p dist
+          echo "Build output from $RUNNER_NAME at $(date)" > dist/output.txt
+          
+          # 作成したファイルを確認
+          echo "📁 Files created:"
+          ls -la
+          cat runner-info.txt
+      
+      - name: Simulate concurrent file access
+        working-directory: ${{ env.WORKSPACE }}/code
+        run: |
+          # 10秒間、1秒ごとにファイルに書き込み
+          for i in {1..10}; do
+            echo "[$RUNNER_NAME] Write $i at $(date +%s.%N)" >> concurrent-test.log
+            sleep 1
+          done
+          
+          echo "📊 Concurrent writes completed. Log content:"
+          cat concurrent-test.log
+      
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          echo "🧹 Cleaning up workspace..."
+          if [ -d "${{ env.WORKSPACE }}" ]; then
+            echo "Removing: ${{ env.WORKSPACE }}"
+            rm -rf "${{ env.WORKSPACE }}"
+            echo "✅ Cleanup completed"
+          fi
+
+  isolated-build-2:
+    runs-on: self-hosted
+    steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Running on: $RUNNER_NAME"
+          echo "📂 Runner temp: ${{ runner.temp }}"
+      
+      - name: Setup isolated workspace
+        run: |
+          export WORKSPACE="${{ runner.temp }}/workspace-${{ github.run_id }}-${{ github.run_attempt }}-job2"
+          mkdir -p $WORKSPACE
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          echo "✅ Created workspace: $WORKSPACE"
+      
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ env.WORKSPACE }}/code
+      
+      - name: Create different test files
+        working-directory: ${{ env.WORKSPACE }}/code
+        run: |
+          echo "📝 Creating different test files..."
+          mkdir -p dist
+          echo "Different output from $RUNNER_NAME" > dist/output.txt
+          
+          # 異なるファイルを作成して競合がないことを確認
+          echo "Job 2 data from $RUNNER_NAME" > job2-specific.txt
+          ls -la
+      
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          if [ -d "${{ env.WORKSPACE }}" ]; then
+            rm -rf "${{ env.WORKSPACE }}"
+          fi

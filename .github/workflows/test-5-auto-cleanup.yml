@@ -1,0 +1,158 @@
+name: Test 5 - Auto Cleanup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  cleanup-test-success:
+    runs-on: self-hosted
+    steps:
+      - name: Setup workspace
+        run: |
+          echo "🏃 Runner: $RUNNER_NAME"
+          
+          # ワークスペースの作成
+          WORKSPACE="/tmp/cleanup-test-${{ github.run_id }}-success"
+          mkdir -p $WORKSPACE/{data,logs,temp}
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          
+          echo "✅ Created workspace: $WORKSPACE"
+      
+      - name: Create test files
+        run: |
+          cd ${{ env.WORKSPACE }}
+          
+          # 各種ファイルを作成
+          echo "Test data" > data/test.txt
+          echo "Log entry" > logs/app.log
+          dd if=/dev/zero of=temp/large-file.tmp bs=1M count=10 2>/dev/null
+          
+          echo "📁 Created files:"
+          du -sh */*
+      
+      - name: Successful operation
+        run: |
+          echo "✅ This job will succeed"
+          exit 0
+      
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          echo "🧹 Cleanup triggered with status: ${{ job.status }}"
+          
+          # ワークスペースのクリーンアップ
+          if [ -d "${{ env.WORKSPACE }}" ]; then
+            echo "Removing workspace: ${{ env.WORKSPACE }}"
+            rm -rf "${{ env.WORKSPACE }}"
+            echo "✅ Cleanup completed successfully"
+          fi
+  
+  cleanup-test-failure:
+    runs-on: self-hosted
+    steps:
+      - name: Setup workspace
+        run: |
+          WORKSPACE="/tmp/cleanup-test-${{ github.run_id }}-failure"
+          mkdir -p $WORKSPACE
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          echo "✅ Created workspace: $WORKSPACE"
+      
+      - name: Create important files
+        run: |
+          cd ${{ env.WORKSPACE }}
+          echo "Important data that must be cleaned" > important.txt
+          echo "📁 Files created"
+      
+      - name: Simulate failure
+        run: |
+          echo "❌ This job will fail"
+          exit 1
+      
+      - name: This step will be skipped
+        run: |
+          echo "This won't run due to failure"
+      
+      - name: Cleanup workspace (runs even on failure)
+        if: always()
+        run: |
+          echo "🧹 Cleanup triggered despite failure!"
+          echo "Job status: ${{ job.status }}"
+          
+          if [ -d "${{ env.WORKSPACE }}" ]; then
+            rm -rf "${{ env.WORKSPACE }}"
+            echo "✅ Cleanup completed even after failure"
+          fi
+  
+  cleanup-old-files:
+    runs-on: self-hosted
+    steps:
+      - name: Create test files with different ages
+        run: |
+          echo "📅 Creating files with different timestamps..."
+          
+          # 現在のファイル
+          mkdir -p /tmp/build-current-$(date +%s)
+          
+          # 2日前のファイル（タイムスタンプを変更）
+          OLD_DIR="/tmp/build-old-$RANDOM"
+          mkdir -p $OLD_DIR
+          touch -d "2 days ago" $OLD_DIR
+          
+          # 1時間前のファイル
+          RECENT_DIR="/tmp/build-recent-$RANDOM"
+          mkdir -p $RECENT_DIR
+          touch -d "1 hour ago" $RECENT_DIR
+          
+          echo "✅ Created test directories"
+      
+      - name: Clean old temporary files
+        run: |
+          echo "🧹 Cleaning old temporary files..."
+          
+          # 1日以上古いbuild-*ディレクトリを検索
+          echo "Finding directories older than 1 day:"
+          find /tmp -name "build-*" -type d -mtime +1 -print 2>/dev/null | head -10
+          
+          # 実際に削除（本番環境では慎重に）
+          echo ""
+          echo "Removing old directories..."
+          find /tmp -name "build-*" -type d -mtime +1 -exec rm -rf {} \; 2>/dev/null || true
+          
+          echo "✅ Cleanup of old files completed"
+      
+      - name: Show remaining files
+        run: |
+          echo "📊 Remaining build directories:"
+          ls -la /tmp | grep "build-" | head -10 || echo "No build directories found"
+  
+  cleanup-with-artifacts:
+    runs-on: self-hosted
+    steps:
+      - name: Create workspace with artifacts
+        run: |
+          WORKSPACE="/tmp/artifact-test-${{ github.run_id }}"
+          mkdir -p $WORKSPACE/artifacts
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          
+          # アーティファクトの作成
+          echo "Important artifact data" > $WORKSPACE/artifacts/result.txt
+          echo "✅ Created artifacts"
+      
+      - name: Upload artifacts before cleanup
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-artifacts-${{ github.run_id }}
+          path: ${{ env.WORKSPACE }}/artifacts/
+      
+      - name: Cleanup after artifact upload
+        if: always()
+        run: |
+          echo "🧹 Cleaning up after artifact upload..."
+          
+          # アーティファクトがアップロードされた後にクリーンアップ
+          if [ -d "${{ env.WORKSPACE }}" ]; then
+            rm -rf "${{ env.WORKSPACE }}"
+            echo "✅ Workspace cleaned, artifacts preserved in GitHub"
+          fi

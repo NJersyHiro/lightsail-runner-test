@@ -1,0 +1,108 @@
+name: Test 3 - Dynamic Port Allocation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  port-allocation-test:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        service: [web, api, db]
+    steps:
+      - name: Show runner info
+        run: |
+          echo "🏃 Runner: $RUNNER_NAME"
+          echo "🔧 Service: ${{ matrix.service }}"
+      
+      - name: Find and allocate dynamic port
+        run: |
+          echo "🔍 Finding available port for ${{ matrix.service }} service..."
+          
+          # Method 1: Using Python
+          PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+          echo "PORT=$PORT" >> $GITHUB_ENV
+          echo "✅ Allocated port via Python: $PORT"
+          
+          # Method 2: Using shell (alternative)
+          ALT_PORT=$(comm -23 <(seq 49152 65535 | sort) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep -E '[0-9]+' | sort -u) | head -1)
+          echo "ALT_PORT=$ALT_PORT" >> $GITHUB_ENV
+          echo "✅ Alternative port via shell: $ALT_PORT"
+      
+      - uses: actions/checkout@v4
+      
+      - name: Start service with dynamic port
+        run: |
+          echo "🚀 Starting ${{ matrix.service }} service on port $PORT"
+          
+          # サービスのシミュレーション（実際のサーバーの代わりにncを使用）
+          case "${{ matrix.service }}" in
+            web)
+              # Webサーバーのシミュレーション
+              timeout 30s bash -c "while true; do echo -e 'HTTP/1.1 200 OK\n\nWeb Server on $RUNNER_NAME:$PORT' | nc -l -p $PORT -q 1; done" &
+              WEB_PID=$!
+              echo "WEB_PID=$WEB_PID" >> $GITHUB_ENV
+              ;;
+            api)
+              # APIサーバーのシミュレーション
+              timeout 30s bash -c "while true; do echo -e 'HTTP/1.1 200 OK\n\n{\"api\":\"running\",\"runner\":\"$RUNNER_NAME\",\"port\":$PORT}' | nc -l -p $PORT -q 1; done" &
+              API_PID=$!
+              echo "API_PID=$API_PID" >> $GITHUB_ENV
+              ;;
+            db)
+              # DBのシミュレーション
+              echo "Database simulator on port $PORT" > /tmp/db-$PORT.txt
+              ;;
+          esac
+          
+          sleep 2
+          echo "✅ Service started"
+      
+      - name: Test service connectivity
+        run: |
+          echo "🧪 Testing service connectivity..."
+          
+          case "${{ matrix.service }}" in
+            web|api)
+              # サービスが起動しているか確認
+              if nc -zv localhost $PORT 2>&1 | grep -q succeeded; then
+                echo "✅ Service is listening on port $PORT"
+                
+                # 簡単なリクエストテスト
+                echo "📡 Sending test request..."
+                echo -e "GET / HTTP/1.1\nHost: localhost\n\n" | nc localhost $PORT -w 2 || echo "Request completed"
+              else
+                echo "❌ Service is not listening on port $PORT"
+              fi
+              ;;
+            db)
+              if [ -f "/tmp/db-$PORT.txt" ]; then
+                echo "✅ Database file exists:"
+                cat "/tmp/db-$PORT.txt"
+              fi
+              ;;
+          esac
+      
+      - name: Show port usage
+        run: |
+          echo "📊 Current port usage by this workflow:"
+          echo "- ${{ matrix.service }} service: $PORT"
+          echo ""
+          echo "🔍 All listeners on this system:"
+          ss -tlnp 2>/dev/null | grep -E ":(4[0-9]{4}|5[0-9]{4}|6[0-9]{4})" | head -10 || echo "No high ports in use"
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "🧹 Cleaning up..."
+          
+          # プロセスの終了
+          [ ! -z "$WEB_PID" ] && kill $WEB_PID 2>/dev/null || true
+          [ ! -z "$API_PID" ] && kill $API_PID 2>/dev/null || true
+          
+          # ファイルの削除
+          rm -f /tmp/db-$PORT.txt
+          
+          echo "✅ Cleanup completed"
